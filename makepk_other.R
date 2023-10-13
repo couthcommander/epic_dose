@@ -1,9 +1,5 @@
 library(EHR)
 
-hd <- file.path('C:','Users','beckca','OneDrive - VUMC')
-studyDir <- file.path(hd, 'projects','choi','mprint')
-setwd(studyDir)
-
 only_children <- TRUE
 only_adults <- FALSE
 use_weight <- TRUE
