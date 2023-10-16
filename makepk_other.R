@@ -11,18 +11,45 @@ load('fakedata.RData')
 
 nwn <- EHR:::nowarnnum
 lu <- function(x) length(unique(x))
+takeClosest <- function(dat1, dat2, id1, id2, time1, time2, val2) {
+  c1 <- names(dat1)
+  nt <- time2
+  nv <- val2
+  if(time2 %in% c1) nt <- paste0(nt,'.y')
+  if(val2 %in% c1) nv <- paste0(nv,'.y')
+  # add new columns to first data set
+  dat1[,c(nt,nv)] <- NA
 
+  dat2 <- dat2[,c(id2, time2, val2)]
+  dat2 <- dat2[complete.cases(dat2),]
+  ldat <- split(dat2[,c(time2, val2)], dat2[,id2])
+  xidc <- as.character(dat1[,id1])
+  xdts <- as.Date(dat1[,time1])
+  lastid <- -1
+  for(i in seq_along(xidc)) {
+    curid <- xidc[i]
+    if(curid != lastid) {
+      i_dat <- ldat[[curid]]
+    }
+    mix <- which.min(abs(difftime(xdts[i], i_dat[[1]])))
+    dat1[i,c(nt,nv)] <- i_dat[mix,]
+    lastid <- curid
+  }
+  dat1
+}
 epic_date <- as.POSIXct('2018-03-01')
 
 makepk <- function(drug, drug.columns = NULL,
-  age.data = NULL, age.columns = NULL, age.req = NULL,
-  wgts, dn
+  age.data = NULL, age.columns = NULL, age.limits = NULL,
+  wgts, dn,
+  min.obs = 3, max.obs = 10, earliest.date = NA
 ) {
   drug.req <- list(id = NA, starttime = NA, endtime = NULL, drugname = NA,
     inout = NULL, strength = NA, frequency = NULL,
-    dose = NA, doseunit = NULL, duration = NULL, quantity = NULL
+    dose = NA, doseunit = NULL, duration = NULL, quantity = NULL,
+    agelinkid = NULL, wgtlinkid = NULL
   )
-  age.req <- list(id = NA, druglinkid = NA, age = NULL, dob = NULL)
+  age.req <- list(id = NA, datetime = NULL, age = NULL, dob = NULL)
   # check "drug" data columns and prepare data for standardization
   drug.col <- EHR:::validateColumns(drug, drug.columns, drug.req)
   if(length(drug.col$starttime) == 2) {
@@ -31,6 +58,7 @@ makepk <- function(drug, drug.columns = NULL,
     drugDT <- drug[,drug.col$starttime]
   }
   drug[,'dt'] <- pkdata::parse_dates(drugDT)
+  drug.col$starttime <- 'dt'
   if(!is.null(drug.col$endtime)) {
     if(length(drug.col$endtime) == 2) {
       drugDT <- paste(drug[,drug.col$endtime[1]], drug[,drug.col$endtime[2]])
@@ -38,6 +66,7 @@ makepk <- function(drug, drug.columns = NULL,
       drugDT <- drug[,drug.col$endtime]
     }
     drug[,'enddt'] <- pkdata::parse_dates(drugDT)
+    drug.col$endtime <- 'enddt'
   } else {
     drug[,'enddt'] <- as.POSIXct(NA)
   }
@@ -76,73 +105,125 @@ makepk <- function(drug, drug.columns = NULL,
   drug.col$id <- 'id'
   idCol <- match(origID, names(drug))
   names(drug)[idCol] <- 'id'
+  # possibly link to age data
+  if(is.null(drug.col$agelinkid)) {
+    drug.col$agelinkid <- drug.col$id
+  }
+  # possibly link to wgt data
+  if(is.null(drug.col$wgtlinkid)) {
+    drug.col$wgtlinkid <- drug.col$id
+  }
 
-  voi <- unname(unlist(drug.col))
+  voi <- unique(unname(unlist(drug.col)))
   dt2num <- unclass(drug[,'enddt'])
   dt2num[is.na(dt2num)] <- Inf
   # reorder data by id|dt|-enddate
   # -enddate forces duplicate start=end to last
   drug0 <- drug[order(drug[,'id'], drug[,'dt'], -dt2num), voi]
 
-  # check "age" data columns
-  age.col <- EHR:::validateColumns(age.data, age.columns, age.req)
-
-  print(head(drug0))
-  stop('')
-#  voi <- c(
-#  'PERSON_ID','CONCEPT_DRUG_NAME','DRUG_EXPOSURE_START_DATETIME','DRUG_EXPOSURE_END_DATETIME',
-#  'X_DOC_TYPE','X_STRENGTH','X_FREQUENCY','X_DOSE','X_DURATION','QUANTITY','DOSE_UNIT_SOURCE_VALUE','MRN'
-#  )
-
-
-  # add age
-  if(!is.null(demo)) {
-    dob <- as.Date(demo[,'birthDate'])
-    dob0 <- dob[match(drug0[,'MRN'], demo[,'MRN'])]
-    age_yrs <- (as.Date(drug0[,'dt']) - dob0) / 365.25
-    drug0[,'age'] <- round(as.numeric(age_yrs), 2)
-    min_age <- tapply(drug0[,'age'], drug0[,'MRN'], min)
-    children_mrn <- names(min_age[min_age < 18])
-    adult_mrn <- names(min_age[min_age >= 18])
+  # a valid user's first observation must be on/after "earliest.date"
+  if(!is.na(earliest.date)) {
+    earliest.date <- pkdata::parse_dates(earliest.date)
+    dt1_p_usr <- as.POSIXct(tapply(drug0[,'dt'], drug0[,'id'], min), origin = '1970-01-01')
+    valid_date_ids <- names(dt1_p_usr)[dt1_p_usr >= earliest.date]
+    drug0 <- drug0[drug0[,'id'] %in% valid_date_ids,]
+  }
+  # a valid user must have between [A,B] observations
+  if(!is.na(min.obs) || !is.na(max.obs)) {
+    obs_p_usr <- tapply(drug0[,'dt'], drug0[,'id'], lu)
+    min.obs <- max(min.obs, 0, na.rm = TRUE)
+    max.obs <- min(max.obs, Inf, na.rm = TRUE)
+    valid_obs_ids <- names(obs_p_usr)[obs_p_usr >= min.obs & obs_p_usr <= max.obs]
+    drug0 <- drug0[drug0[,'id'] %in% valid_obs_ids,]
   }
 
-  dt1_p_usr <- as.POSIXct(tapply(drug0[,'dt'], drug0[,'MRN'], min), origin = '1970-01-01')
-  obs_p_usr <- tapply(drug0[,'dt'], drug0[,'MRN'], lu)
-  # is earliest date after EPIC switch?
-  only_epic <- names(dt1_p_usr)[dt1_p_usr >= epic_date]
-  # at least 3 observations?
-  has_multi <- names(obs_p_usr)[obs_p_usr > 2 & obs_p_usr < 11]
-  good_user <- intersect(only_epic, has_multi)
+  # check "age" data columns
+  if(!is.null(age.data)) {
+    # this will overwrite an "age" column in drug0
+    if('age' %in% names(drug0)) {
+      drug0[,'age'] <- NULL
+    }
+    age.col <- EHR:::validateColumns(age.data, age.columns, age.req)
+    secsYear <- 86400 * 365.25
+    if(!is.null(age.col$datetime) && !is.null(age.col$age)) {
+      if(length(age.col$datetime) == 2) {
+        ageDT <- paste(age.data[,age.col$datetime[1]], age.data[,age.col$datetime[2]])
+      } else {
+        ageDT <- age.data[,age.col$datetime]
+      }
+      age.data[,'agedt'] <- pkdata::parse_dates(ageDT)
+      # merge with drug by closest time and calculate age
+      drug0 <- takeClosest(drug0, age.data, drug.col$agelinkid, age.col$id, 'dt', 'agedt', age.col$age)
+      dd <- as.numeric(difftime(drug0[,'dt'], drug0[,'agedt'], units = 'secs'))
+      # convert date difference to years
+      dd <- round(dd / secsYear, 2)
+      # need to adjust age by date difference
+      curage <- drug0[,age.col$age] + dd
+      drug0[,age.col$age] <- NULL
+      drug0[,'agedt'] <- NULL
+      drug0[,'age'] <- curage
+    } else if(!is.null(age.col$dob)) {
+      ageDOB <- age.data[,age.col$dob]
+      age.data[,'dob'] <- pkdata::parse_dates(ageDOB)
+      age.col$dob <- 'dob'
+      # merge with drug and calculate age
+      drug0 <- merge(drug0, age.data[,c(age.col$id, 'dob')], all.x = TRUE, by.x = drug.col$agelinkid, by.y = age.col$id)
+      # this should always be positive
+      dd <- as.numeric(difftime(drug0[,'dt'], drug0[,'dob'], units = 'secs'))
+      # convert date difference to years
+      drug0[,'age'] <- round(dd / secsYear, 2)
+      drug0[,'dob'] <- NULL
+    } else if(!is.null(age.col$age)) {
+      # merge with drug, has "age"
+      drug0 <- merge(drug0, age.data[,c(age.col$id, 'dob')], all.x = TRUE, by.x = drug.col$agelinkid, by.y = age.col$id)
+      curage <- drug0[,age.col$age]
+      drug0[,age.col$age] <- NULL
+      drug0[,'age'] <- curage
+    } else {
+      stop('age data is provided without age or date of birth')
+    }
+  }
+  ## does DOB work with both "date" and "datetime"?
 
-  if(only_children) good_user <- intersect(good_user, children_mrn)
-  if(only_adults) good_user <- intersect(good_user, adult_mrn)
-
-  # remove adults
-  drugA <- drug0[drug0[,'MRN'] %in% good_user,]
+  # find IDs who fall within age limits [A,B)
+  if(!is.null(age.limits) && 'age' %in% names(drug0)) {
+    min_age <- tapply(drug0[,'age'], drug0[,'id'], min)
+    if(length(age.limits) == 1) {
+      age.limits <- c(0, age.limits)
+    } else if(length(age.limits) > 2) {
+      age.limits <- range(age.limits)
+    }
+    valid_age_ids <- names(min_age[min_age >= age.limits[1] & min_age < age.limits[2]])
+    drug0 <- drug0[drug0[,'id'] %in% valid_age_ids,]
+  }
 
   ### count redundant data
-  key0 <- do.call(paste, c(drugA[,c('PERSON_ID', 'CONCEPT_DRUG_NAME', 'dt', 'X_DOC_TYPE', 'X_DOSE', 'X_FREQUENCY', 'X_DURATION', 'QUANTITY', 'X_STRENGTH')], sep = '|'))
+  dupcols <- c('id', drug.col$drugname, 'dt', drug.col$inout, drug.col$dose, drug.col$frequency, drug.col$duration, drug.col$quantity, drug.col$strength)
+  key0 <- do.call(paste, c(drug0[,dupcols], sep = '|'))
   c1 <- sum(duplicated(key0))
   c2 <- length(key0)
-  sprintf('%.2f%% (%s / %s)', 100 * c1 / c2, c1, c2)
+  cat('####################\n')
+  cat(sprintf('raw duplicate count: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
+  cat('####################\n')
 
-  voi <- c('MRN','PERSON_ID','dt','enddt','X_FREQUENCY','X_DURATION','QUANTITY','CONCEPT_DRUG_NAME','X_DOSE','DOSE_UNIT_SOURCE_VALUE','X_DOC_TYPE','X_STRENGTH')
-  drug1 <- drugA[!duplicated(key0), voi]
+  voi <- unique(c('id', drug.col$wgtlinkid, 'dt', 'enddt', drug.col$frequency, drug.col$duration, drug.col$quantity,
+    drug.col$drugname, drug.col$dose, drug.col$doseunit, drug.col$inout, drug.col$strength
+  ))
+  drug1 <- drug0[!duplicated(key0), voi]
 
   # standardize DOSE
-  dose_num <- nwn(sub('[^0-9.]*([0-9.]+)[^0-9.]?.*', '\\1', drug1[,'X_DOSE']))
+  dose_num <- nwn(sub('[^0-9.]*([0-9.]+)[^0-9.]?.*', '\\1', drug1[,drug.col$dose]))
   drug1[,'dose_num'] <- dose_num
 
   # UNIT
-  unit_val <- tolower(drug1[,'DOSE_UNIT_SOURCE_VALUE'])
+  unit_val <- tolower(drug1[,drug.col$doseunit])
   drug1[,'unit'] <- unit_val
-  table(unit_val)
   # need UNIT|DOSE|STRENGTH
   # possibly impute from same-day outpatient?
-  drug2 <- drug1[!is.na(unit_val) & !is.na(dose_num) & !is.na(drug1[,'X_STRENGTH']),]
+  drug2 <- drug1[!is.na(unit_val) & !is.na(dose_num) & !is.na(drug1[,drug.col$strength]),]
 
   # standardize frequency
-  freq <- sub('[ ]?_.*', '', tolower(drug2[,'X_FREQUENCY']))
+  freq <- sub('[ ]?_.*', '', tolower(drug2[,drug.col$frequency]))
   freq <- sub('ha$', 'h', freq)
   # ufreq <- sort(unique(freq))
   # cbind(ufreq, EHR::stdzFreq(ufreq), EHR::freqNum(EHR::stdzFreq(ufreq)))
@@ -151,7 +232,7 @@ makepk <- function(drug, drug.columns = NULL,
   drug2[,'freq_num'] <- freq
 
   # convert "X mg/Y mL" into "X/Y mg"
-  str_low <- tolower(drug2[,'X_STRENGTH'])
+  str_low <- tolower(drug2[,drug.col$strength])
   str_u <- unique(str_low)
   ml_x <- grep('/[0-9]+ ml', str_u)
   if(length(ml_x)) {
@@ -162,16 +243,16 @@ makepk <- function(drug, drug.columns = NULL,
     mg_str <- paste(vapply(mg_val, paste, character(1), collapse = '-'), 'mg')
     new_str <- mg_str[match(str_low, str_u[ml_x])]
     need_conv <- which(!is.na(new_str))
-    drug2[need_conv,'X_STRENGTH'] <- new_str[need_conv]
+    drug2[need_conv,drug.col$strength] <- new_str[need_conv]
   }
 
   # is there a pattern that can establish combo drugs?
-  combo_ix <- grep(' / ', drug2[,'CONCEPT_DRUG_NAME'])
+  combo_ix <- grep(' / ', drug2[,drug.col$drugname])
   if(length(combo_ix) > 0) {
-    combo_dn <- drug2[combo_ix,'CONCEPT_DRUG_NAME']
-    combo_xs <- drug2[combo_ix,'X_STRENGTH']
+    combo_dn <- drug2[combo_ix,drug.col$drugname]
+    combo_xs <- drug2[combo_ix,drug.col$strength]
     if(any(tapply(combo_xs, combo_dn, lu) > 1)) {
-      stop('unique CONCEPT_DRUG_NAME mapped to multiple X_STRENGTH')
+      stop('unique DRUG_NAME mapped to multiple STRENGTH')
     } else {
       combo_udn <- unique(combo_dn)
       nc <- length(combo_udn)
@@ -195,24 +276,30 @@ makepk <- function(drug, drug.columns = NULL,
   }
 
   # standardize STRENGTH
-  str_in_dn <- grep('[0-9]+[ ]*mg', drug2[,'CONCEPT_DRUG_NAME'], ignore.case = TRUE)
+  str_in_dn <- grep('[0-9]+[ ]*mg', drug2[,drug.col$drugname], ignore.case = TRUE)
   # this grabs first; need to associate strength with drugname when combo is given
-  alt_str <- as.numeric(sub('.*[^0-9]([0-9]+)$', '\\1', sub('[ ]?mg.*', '', drug2[str_in_dn,'CONCEPT_DRUG_NAME'], ignore.case = TRUE)))
+  alt_str <- as.numeric(sub('.*[^0-9]([0-9]+)$', '\\1', sub('[ ]?mg.*', '', drug2[str_in_dn,drug.col$drugname], ignore.case = TRUE)))
   drug2[str_in_dn,'str_alt'] <- alt_str
-  drug2[,'str'] <- tolower(drug2[,'X_STRENGTH'])
-  ustr <- unique(drug2[,'str'])
+  low_str <- tolower(drug2[,drug.col$strength])
+  ustr <- unique(low_str)
   ## alter stdzStrength to remove commas(,)
   stdstr <- as.numeric(EHR::stdzStrength(gsub(',', '', ustr)))
-  drug2[,'str_num'] <- stdstr[match(drug2[,'str'], ustr)]
+  drug2[,'str_num'] <- stdstr[match(low_str, ustr)]
   alt_ix <- !is.na(drug2[,'str_alt']) & is.na(drug2[,'str_num'])
   drug2[alt_ix,'str_num'] <- drug2[alt_ix,'str_alt']
   # replace str_alt/str_num with combo
   if(!is.null(cds)) {
-    alt_str1 <- cds[match(drug2[,'CONCEPT_DRUG_NAME'], combo_udn),'cstr']
+    alt_str1 <- cds[match(drug2[,drug.col$drugname], combo_udn),'cstr']
     cds_ix <- which(!is.na(alt_str1))
     drug2[cds_ix,'str_alt'] <- alt_str1[cds_ix]
     drug2[cds_ix,'str_num'] <- alt_str1[cds_ix]
   }
+
+  print(head(drug2))
+  stop('')
+#   voi <- unique(c('id', drug.col$wgtlinkid, 'dt', 'enddt', drug.col$frequency, drug.col$duration, drug.col$quantity,
+#     drug.col$drugname, drug.col$dose, drug.col$doseunit, drug.col$inout, drug.col$strength
+#   ))
 
   # find "weight" by closest time
   drug2[,'wgt'] <- NA
@@ -376,9 +463,13 @@ drug0[,'isOP'] <- grepl('OP', drug0[,'X_DOC_TYPE'])
 colMap <- list(
   id = 'PERSON_ID', starttime = 'DRUG_EXPOSURE_START_DATETIME', endtime = 'DRUG_EXPOSURE_END_DATETIME',
   drugname = 'CONCEPT_DRUG_NAME', inout = 'isOP', strength = 'X_STRENGTH',
-  frequency = 'X_FREQUENCY', dose = 'X_DOSE', doseunit = 'DOSE_UNIT_SOURCE_VALUE', quantity = 'QUANTITY'
+  frequency = 'X_FREQUENCY', dose = 'X_DOSE', doseunit = 'DOSE_UNIT_SOURCE_VALUE', quantity = 'QUANTITY',
+  agelinkid = 'MRN'
 )
-res <- makepk(drug0, colMap, demo, wgts, dn)
+res <- makepk(drug0, colMap,
+  age.data = demo, age.columns = list(id = 'MRN', dob = 'birthDate'), age.limits = 18,
+  wgts, dn, earliest.date = epic_date
+)
 
 if(only_children & !only_adults) {
   name_post <- paste0(dn, '-children18')
