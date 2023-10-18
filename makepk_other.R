@@ -39,8 +39,8 @@ epic_date <- as.POSIXct('2018-03-01')
 
 makepk <- function(drug, drug.columns = NULL,
   age.data = NULL, age.columns = NULL, age.limits = NULL,
-  wgt.data = NULL, wgt.columns = NULL,
-  min.obs = 3, max.obs = 10, earliest.date = NA, dn
+  wgt.data = NULL, wgt.columns = NULL, min.obs = 3, max.obs = 10,
+  earliest.date = NA, drugname = NULL, comments = TRUE
 ) {
   drug.req <- list(id = NA, starttime = NA, endtime = NULL, drugname = NA,
     inout = NULL, strength = NA, frequency = NULL,
@@ -199,11 +199,13 @@ makepk <- function(drug, drug.columns = NULL,
   ### count redundant data
   dupcols <- c('id', drug.col$drugname, 'dt', drug.col$inout, drug.col$dose, drug.col$frequency, drug.col$duration, drug.col$quantity, drug.col$strength)
   key0 <- do.call(paste, c(drug0[,dupcols], sep = '|'))
-  c1 <- sum(duplicated(key0))
-  c2 <- length(key0)
-  cat('####################\n')
-  cat(sprintf('raw duplicate count: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
-  cat('####################\n')
+  if(comments) {
+    c1 <- sum(duplicated(key0))
+    c2 <- length(key0)
+    cat('####################\n')
+    cat(sprintf('raw duplicate count: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
+    cat('####################\n')
+  }
 
   voi <- unique(c('id', drug.col$wgtlinkid, 'dt', 'enddt', drug.col$frequency, drug.col$duration, drug.col$quantity,
     drug.col$drugname, drug.col$dose, drug.col$doseunit, drug.col$inout, drug.col$strength
@@ -247,7 +249,7 @@ makepk <- function(drug, drug.columns = NULL,
 
   # is there a pattern that can establish combo drugs?
   combo_ix <- grep(' / ', drug2[,drug.col$drugname])
-  if(length(combo_ix) > 0) {
+  if(length(combo_ix) > 0 && !is.null(drugname)) {
     combo_dn <- drug2[combo_ix,drug.col$drugname]
     combo_xs <- drug2[combo_ix,drug.col$strength]
     if(any(tapply(combo_xs, combo_dn, lu) > 1)) {
@@ -260,12 +262,13 @@ makepk <- function(drug, drug.columns = NULL,
       combo_str <- strsplit(sub('[ ]*mg.*', '', gsub(',', '', combo_uxs)), '-')
     }
     l_cdn <- strsplit(combo_udn, ' / ')
+    ldn <- tolower(drugname)
     cds <- do.call(rbind, lapply(seq_along(combo_udn), function(i) {
       cd_i <- l_cdn[[i]]
       cd_s <- nwn(combo_str[[i]])
       a <- sub('.*(^|[^a-zA-Z])([a-zA-Z]+) ([0-9.]+) MG.*', '\\2', cd_i)
       b <- as.numeric(sub('.*(^|[^a-zA-Z])([a-zA-Z]+) ([0-9.]+) MG.*', '\\3', cd_i))
-      i_ix <- which.min(stringdist::stringdist(tolower(a), tolower(dn)))
+      i_ix <- which.min(stringdist::stringdist(tolower(a), ldn))
       df_i <- data.frame(drugname = a, cstr = b)
       df_i[match(cd_s, b),'xstr'] <- cd_s
       df_i[i_ix,]
@@ -312,6 +315,9 @@ makepk <- function(drug, drug.columns = NULL,
     drug2[,'wgt'] <- nwn(drug2[,wgt.col$wgt])
     drug2[,'wgt.dd'] <- abs(round(as.numeric(difftime(drug2[,'dt'], drug2[,'wgtdt'], units = 'days'))))
     drug2[,'wgtdt'] <- NULL
+  } else {
+    drug2[,'wgt'] <- NA
+    drug2[,'wgt.dd'] <- NA
   }
 
   voi <- c('id', 'dt', 'enddt', 'str_num', 'wgt', 'wgt.dd', 'dose_num', 'unit', 'freq_num',
@@ -327,9 +333,9 @@ makepk <- function(drug, drug.columns = NULL,
 
   need_kg <- sort(c(kgpd_ix, kg_ix))
   n_nowgt <- sum(is.na(drug3[need_kg,'wgt']))
-  if(n_nowgt > 0) {
+  if(comments && n_nowgt > 0) {
     cat('####################\n')
-    cat(sprintf('records indicating weight and missing: %0.2f%%\n', n_nowgt))
+    cat(sprintf('records indicating weight and missing: %0.2f\n', n_nowgt))
     cat('####################\n')
   }
 
@@ -363,20 +369,24 @@ makepk <- function(drug, drug.columns = NULL,
   ### remove duplicates
   voi <- c('id','dt','daily.dose')
   key1 <- do.call(paste, c(drug3[,voi], sep = '|'))
-  c1 <- sum(duplicated(key1))
-  c2 <- length(key1)
-  cat('####################\n')
-  cat(sprintf('daily-dose duplicate count: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
-  cat('####################\n')
+  if(comments) {
+    c1 <- sum(duplicated(key1))
+    c2 <- length(key1)
+    cat('####################\n')
+    cat(sprintf('daily-dose duplicate count: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
+    cat('####################\n')
+  }
   drug4 <- drug3[!duplicated(key1),]
 
   ### count conflicting doses
   key <- do.call(paste, c(drug4[,c('id','dt')], sep = '|'))
-  c1 <- sum(duplicated(key))
-  c2 <- length(key)
-  cat('####################\n')
-  cat(sprintf('conflicting doses: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
-  cat('####################\n')
+  if(comments) {
+    c1 <- sum(duplicated(key))
+    c2 <- length(key)
+    cat('####################\n')
+    cat(sprintf('conflicting doses: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
+    cat('####################\n')
+  }
 
   dupkeys <- unique(key[duplicated(key)])
   # d1 has no duplicates
@@ -447,6 +457,31 @@ makepk <- function(drug, drug.columns = NULL,
   ddC[,'outpatient'] <- +(ddC[,drug.col$inout] == 1)
   res <- ddC[,c('id','date','ddd','calc_dur','wgt','wgt.dd','outpatient','conflict')]
   names(res)[c(1,3)] <- c(origID, 'dailydose')
+  noWgtData <- all(is.na(res[,'wgt']))
+  if(noWgtData) {
+    res[,'wgt'] <- NULL
+    res[,'wgt.dd'] <- NULL
+  }
+
+  if(comments) {
+    if(!noWgtData) {
+      cat('####################\n')
+      cat('counts of wgt-date-difference on same day\n')
+      print(table(res[,'wgt.dd'] == 0, useNA = 'always'))
+      cat('####################\n')
+      cat('####################\n')
+      cat('quantile of wgt-date-difference\n')
+      print(quantile(res[,'wgt.dd'], na.rm = TRUE, probs = c(0, .25, .5, .7, 90:100/100)))
+      cat('####################\n')
+    }
+
+    t1 <- c(N = nrow(res), table(res[,'conflict'], useNA = 'always'))
+    t2 <- round(unname(unclass(t1) / t1[1]), 4)
+    cat('####################\n')
+    cat('counts of conflict variable\n')
+    print(cbind(cnt = t1, freq = t2))
+    cat('####################\n')
+  }
   res
 }
 
@@ -461,16 +496,7 @@ colMap <- list(
 res <- makepk(drug0, colMap,
   age.data = demo, age.columns = list(id = 'MRN', dob = 'birthDate'), age.limits = 18,
   wgt.data = wgts, wgt.columns = list(id = 'id', datetime = 'dt', wgt = 'val'),
-  earliest.date = epic_date, dn = dn
+  earliest.date = epic_date, drugname = dn
 )
 
 write.csv(res, file = sprintf('Zoutput-%s-children18.csv', dn), row.names = FALSE)
-
-table(res[,'wgt.dd'] == 0, useNA = 'always')
-quantile(res[,'wgt.dd'], na.rm = TRUE, probs = c(0, .25, .5, .7, 90:100/100))
-wgt_cl <- res[res[,'wgt.dd'] < 20,'wgt.dd']
-hist(wgt_cl, breaks = 0:20)
-
-t1 <- c(N = nrow(res), table(res[,'conflict'], useNA = 'always'))
-t2 <- round(unname(unclass(t1) / t1[1]), 4)
-cbind(cnt = t1, freq = t2)
