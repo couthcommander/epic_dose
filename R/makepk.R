@@ -1,51 +1,32 @@
-library(EHR)
-
-drugname <- 'Amoxicillin'
-dn <- tolower(drugname)
-load('fakedata.RData')
-# need drug/demo/wgts
-
-nwn <- EHR:::nowarnnum
-vc <- EHR:::validateColumns
-lu <- function(x) length(unique(x))
-takeClosest <- function(dat1, dat2, id1, id2, time1, time2, val2) {
-  c1 <- names(dat1)
-  nt <- time2
-  nv <- val2
-  if(time2 %in% c1) nt <- paste0(nt,'.y')
-  if(val2 %in% c1) nv <- paste0(nv,'.y')
-  # add new columns to first data set
-  dat1[,nt] <- as.POSIXct(NA)
-  dat1[,nv] <- NA
-
-  dat2 <- dat2[,c(id2, time2, val2)]
-  dat2 <- dat2[complete.cases(dat2),]
-  ldat <- split(dat2[,c(time2, val2)], dat2[,id2])
-  xidc <- as.character(dat1[,id1])
-  xdts <- as.Date(dat1[,time1])
-  lastid <- -1
-  for(i in seq_along(xidc)) {
-    curid <- xidc[i]
-    if(curid != lastid) {
-      i_dat <- ldat[[curid]]
-    }
-    mix <- which.min(abs(difftime(xdts[i], i_dat[[1]])))
-    dat1[i,c(nt,nv)] <- i_dat[mix,]
-    lastid <- curid
-  }
-  dat1
-}
-epic_date <- as.POSIXct('2018-03-01')
+#' Main function
+#'
+#' Build daily dose
+#'
+#' @param drug data.frame; dose data
+#' @param drug.columns list; map variables to drug data
+#' @param age.data data.frame; age or date of birth data
+#' @param age.columns list; map variables to age.data
+#' @param age.limits numeric with length 1 or 2; age for patient is recorded for earliest observation.
+#' This age is compared to age.limits and patient is removed if outside limits.
+#' @param wgt.data data.frame; weight data
+#' @param wgt.columns list; map variables to wgt.data
+#' @param min.obs numeric; any patient with less observations than this is removed; defaults to 3
+#' @param max.obs numeric; any patient with more observations than this is removed; defaults to 10
+#' @param earliest.date date; any patient with data before this is removed
+#' @param drugname character string; potentially used in partial string matching when combo drugs are present
+#' @param comments T/F; include comments?
+#' @return data set
+#' @export
 
 makepk <- function(drug, drug.columns = NULL,
-  age.data = NULL, age.columns = NULL, age.limits = NULL,
-  wgt.data = NULL, wgt.columns = NULL, min.obs = 3, max.obs = 10,
-  earliest.date = NA, drugname = NULL, comments = TRUE
+                   age.data = NULL, age.columns = NULL, age.limits = NULL,
+                   wgt.data = NULL, wgt.columns = NULL, min.obs = 3, max.obs = 10,
+                   earliest.date = NA, drugname = NULL, comments = TRUE
 ) {
   drug.req <- list(id = NA, starttime = NA, endtime = NULL, drugname = NA,
-    inout = NULL, strength = NA, frequency = NULL,
-    dose = NA, doseunit = NULL, duration = NULL, quantity = NULL,
-    agelinkid = NULL, wgtlinkid = NULL
+                   inout = NULL, strength = NA, frequency = NULL,
+                   dose = NA, doseunit = NULL, duration = NULL, quantity = NULL,
+                   agelinkid = NULL, wgtlinkid = NULL
   )
   age.req <- list(id = NA, datetime = NULL, age = NULL, dob = NULL)
   wgt.req <- list(id = NA, datetime = NA, wgt = NA)
@@ -112,14 +93,14 @@ makepk <- function(drug, drug.columns = NULL,
   if(is.null(drug.col$wgtlinkid) || drug.col$wgtlinkid == origID) {
     drug.col$wgtlinkid <- drug.col$id
   }
-
+  
   voi <- unique(unname(unlist(drug.col)))
   dt2num <- unclass(drug[,'enddt'])
   dt2num[is.na(dt2num)] <- Inf
   # reorder data by id|dt|-enddate
   # -enddate forces duplicate start=end to last
   drug0 <- drug[order(drug[,'id'], drug[,'dt'], -dt2num), voi]
-
+  
   # a valid user's first observation must be on/after "earliest.date"
   if(!is.na(earliest.date)) {
     earliest.date <- pkdata::parse_dates(earliest.date)
@@ -135,7 +116,7 @@ makepk <- function(drug, drug.columns = NULL,
     valid_obs_ids <- names(obs_p_usr)[obs_p_usr >= min.obs & obs_p_usr <= max.obs]
     drug0 <- drug0[drug0[,'id'] %in% valid_obs_ids,]
   }
-
+  
   # check "age" data columns
   if(!is.null(age.data)) {
     # this will overwrite an "age" column in drug0
@@ -183,7 +164,7 @@ makepk <- function(drug, drug.columns = NULL,
     }
   }
   ## does DOB work with both "date" and "datetime"?
-
+  
   # find IDs who fall within age limits [A,B)
   if(!is.null(age.limits) && 'age' %in% names(drug0)) {
     min_age <- tapply(drug0[,'age'], drug0[,'id'], min)
@@ -195,7 +176,7 @@ makepk <- function(drug, drug.columns = NULL,
     valid_age_ids <- names(min_age[min_age >= age.limits[1] & min_age < age.limits[2]])
     drug0 <- drug0[drug0[,'id'] %in% valid_age_ids,]
   }
-
+  
   ### count redundant data
   dupcols <- c('id', drug.col$drugname, 'dt', drug.col$inout, drug.col$dose, drug.col$frequency, drug.col$duration, drug.col$quantity, drug.col$strength)
   key0 <- do.call(paste, c(drug0[,dupcols], sep = '|'))
@@ -206,23 +187,23 @@ makepk <- function(drug, drug.columns = NULL,
     cat(sprintf('raw duplicate count: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
     cat('####################\n')
   }
-
+  
   voi <- unique(c('id', drug.col$wgtlinkid, 'dt', 'enddt', drug.col$frequency, drug.col$duration, drug.col$quantity,
-    drug.col$drugname, drug.col$dose, drug.col$doseunit, drug.col$inout, drug.col$strength
+                  drug.col$drugname, drug.col$dose, drug.col$doseunit, drug.col$inout, drug.col$strength
   ))
   drug1 <- drug0[!duplicated(key0), voi]
-
+  
   # standardize DOSE
   dose_num <- nwn(sub('[^0-9.]*([0-9.]+)[^0-9.]?.*', '\\1', drug1[,drug.col$dose]))
   drug1[,'dose_num'] <- dose_num
-
+  
   # UNIT
   unit_val <- tolower(drug1[,drug.col$doseunit])
   drug1[,'unit'] <- unit_val
   # need UNIT|DOSE|STRENGTH
   # possibly impute from same-day outpatient?
   drug2 <- drug1[!is.na(unit_val) & !is.na(dose_num) & !is.na(drug1[,drug.col$strength]),]
-
+  
   # standardize frequency
   freq <- sub('[ ]?_.*', '', tolower(drug2[,drug.col$frequency]))
   freq <- sub('ha$', 'h', freq)
@@ -231,7 +212,7 @@ makepk <- function(drug, drug.columns = NULL,
   freq <- EHR::freqNum(EHR::stdzFreq(freq))
   freq[is.na(freq)] <- 1
   drug2[,'freq_num'] <- freq
-
+  
   # convert "X mg/Y mL" into "X/Y mg"
   str_low <- tolower(drug2[,drug.col$strength])
   str_u <- unique(str_low)
@@ -246,7 +227,7 @@ makepk <- function(drug, drug.columns = NULL,
     need_conv <- which(!is.na(new_str))
     drug2[need_conv,drug.col$strength] <- new_str[need_conv]
   }
-
+  
   # is there a pattern that can establish combo drugs?
   combo_ix <- grep(' / ', drug2[,drug.col$drugname])
   if(length(combo_ix) > 0 && !is.null(drugname)) {
@@ -276,7 +257,7 @@ makepk <- function(drug, drug.columns = NULL,
   } else {
     cds <- NULL
   }
-
+  
   # standardize STRENGTH
   str_in_dn <- grep('[0-9]+[ ]*mg', drug2[,drug.col$drugname], ignore.case = TRUE)
   # this grabs first; need to associate strength with drugname when combo is given
@@ -296,7 +277,7 @@ makepk <- function(drug, drug.columns = NULL,
     drug2[cds_ix,'str_alt'] <- alt_str1[cds_ix]
     drug2[cds_ix,'str_num'] <- alt_str1[cds_ix]
   }
-
+  
   # check "weight" data columns
   if(!is.null(wgt.data)) {
     # this will overwrite an "wgt" column
@@ -319,9 +300,9 @@ makepk <- function(drug, drug.columns = NULL,
     drug2[,'wgt'] <- NA
     drug2[,'wgt.dd'] <- NA
   }
-
+  
   voi <- c('id', 'dt', 'enddt', 'str_num', 'wgt', 'wgt.dd', 'dose_num', 'unit', 'freq_num',
-    drug.col$duration, drug.col$quantity, drug.col$inout
+           drug.col$duration, drug.col$quantity, drug.col$inout
   )
   drug3 <- drug2[, voi]
   intake <- drug3[,'dose_num']
@@ -330,7 +311,7 @@ makepk <- function(drug, drug.columns = NULL,
   kg_ix <- setdiff(grep('kg', drug3[,'unit']), kgpd_ix)
   ml_ix <- grep('ml', drug3[,'unit'])
   nn_ix <- grep('capsule|tablet', drug3[,'unit'])
-
+  
   need_kg <- sort(c(kgpd_ix, kg_ix))
   n_nowgt <- sum(is.na(drug3[need_kg,'wgt']))
   if(comments && n_nowgt > 0) {
@@ -338,23 +319,23 @@ makepk <- function(drug, drug.columns = NULL,
     cat(sprintf('records indicating weight and missing: %0.2f\n', n_nowgt))
     cat('####################\n')
   }
-
+  
   # number of tablets/etc
   ntabs[kgpd_ix] <- ntabs[kgpd_ix] / drug3[kgpd_ix,'freq_num'] * drug3[kgpd_ix,'wgt']
   ntabs[kg_ix] <- ntabs[kg_ix] * drug3[kg_ix,'wgt']
   ntabs[ml_ix] <- intake[ml_ix]
   ntabs[nn_ix] <- intake[nn_ix]
-
+  
   # convert kg/day to kg
   intake[kgpd_ix] <- intake[kgpd_ix] / drug3[kgpd_ix,'freq_num'] * drug3[kgpd_ix,'wgt']
   intake[kg_ix] <- intake[kg_ix] * drug3[kg_ix,'wgt']
   intake[ml_ix] <- intake[ml_ix] * drug3[ml_ix,'str_num']
   intake[nn_ix] <- intake[nn_ix] * drug3[nn_ix,'str_num']
-
+  
   drug3[,'dose.intake'] <- intake
   drug3[,'daily.dose'] <- intake * drug3[,'freq_num']
   drug3[,'daily.qty'] <- ntabs * drug3[,'freq_num']
-
+  
   # standardize DURATION
   # duration is in days
   if(noDur) {
@@ -365,7 +346,7 @@ makepk <- function(drug, drug.columns = NULL,
     calc_dur[dur_quant_ix] <- round(drug3[dur_quant_ix,drug.col$quantity] / drug3[dur_quant_ix,'daily.qty'], 1)
   }
   drug3[,'calc_dur'] <- calc_dur
-
+  
   ### remove duplicates
   voi <- c('id','dt','daily.dose')
   key1 <- do.call(paste, c(drug3[,voi], sep = '|'))
@@ -377,7 +358,7 @@ makepk <- function(drug, drug.columns = NULL,
     cat('####################\n')
   }
   drug4 <- drug3[!duplicated(key1),]
-
+  
   ### count conflicting doses
   key <- do.call(paste, c(drug4[,c('id','dt')], sep = '|'))
   if(comments) {
@@ -387,7 +368,7 @@ makepk <- function(drug, drug.columns = NULL,
     cat(sprintf('conflicting doses: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
     cat('####################\n')
   }
-
+  
   dupkeys <- unique(key[duplicated(key)])
   # d1 has no duplicates
   d1 <- drug4[!key %in% dupkeys,]
@@ -406,7 +387,7 @@ makepk <- function(drug, drug.columns = NULL,
   cond[d2[,'dt'] > d2[,'enddt']] <- 1
   cond[is.na(d2[,'enddt'])] <- 3
   d2[,'cond'] <- cond
-
+  
   d2key <- do.call(paste, c(d2[,c('id','dt')], sep = '|'))
   ld2 <- split(d2, d2key)
   d3 <- do.call(rbind, lapply(ld2, function(i) {
@@ -419,11 +400,11 @@ makepk <- function(drug, drug.columns = NULL,
   }))
   d3[,'cond'] <- NULL
   d4 <- rbind(d1, d3)
-
+  
   voi <- c('id','dt','enddt','daily.dose','calc_dur','conflict',drug.col$inout,'wgt.dd','wgt')
   drug5 <- d4[,voi]
   grp <- paste(drug5[,'id'], drug5[,drug.col$inout], format(drug5[,'dt'], '%Y-%m-%d'), sep = '|')
-
+  
   # for ID|DT, split by IP/OP - sum IP, move OP to next day
   dby_id_doc_dt <- split(drug5, grp)
   coi <- c('id',drug.col$inout,'calc_dur','conflict','wgt.dd','wgt')
@@ -432,14 +413,14 @@ makepk <- function(drug, drug.columns = NULL,
     if(i[1,drug.col$inout] == 0) {
       ii <- cbind(i[1,coi], date=format(i[1,'dt'], '%Y-%m-%d'))
       ddd <- sum(i[,'daily.dose'])
-    # outpatient
+      # outpatient
     } else {
       ii <- cbind(i[,coi], date=format(i[,'dt'], '%Y-%m-%d'))
       ddd <- i[,'daily.dose']
     }
     cbind(ii, ddd = ddd)
   }))
-
+  
   #outpat should be shifted until after inpat
   #morning/afternoon/frequency *could* all come into play
   # this reorders data by ID|DATE|INOUT
@@ -462,7 +443,7 @@ makepk <- function(drug, drug.columns = NULL,
     res[,'wgt'] <- NULL
     res[,'wgt.dd'] <- NULL
   }
-
+  
   if(comments) {
     if(!noWgtData) {
       cat('####################\n')
@@ -474,7 +455,7 @@ makepk <- function(drug, drug.columns = NULL,
       print(quantile(res[,'wgt.dd'], na.rm = TRUE, probs = c(0, .25, .5, .7, 90:100/100)))
       cat('####################\n')
     }
-
+    
     t1 <- c(N = nrow(res), table(res[,'conflict'], useNA = 'always'))
     t2 <- round(unname(unclass(t1) / t1[1]), 4)
     cat('####################\n')
@@ -484,19 +465,3 @@ makepk <- function(drug, drug.columns = NULL,
   }
   res
 }
-
-drug0 <- drug[drug[,'X_DOC_TYPE'] %in% c('EPIC IP ADMIN','EPIC OP ORDER'),]
-drug0[,'isOP'] <- grepl('OP', drug0[,'X_DOC_TYPE'])
-colMap <- list(
-  id = 'PERSON_ID', starttime = 'DRUG_EXPOSURE_START_DATETIME', endtime = 'DRUG_EXPOSURE_END_DATETIME',
-  drugname = 'CONCEPT_DRUG_NAME', inout = 'isOP', strength = 'X_STRENGTH',
-  frequency = 'X_FREQUENCY', dose = 'X_DOSE', doseunit = 'DOSE_UNIT_SOURCE_VALUE', quantity = 'QUANTITY',
-  agelinkid = 'MRN', wgtlinkid = 'PERSON_ID'
-)
-res <- makepk(drug0, colMap,
-  age.data = demo, age.columns = list(id = 'MRN', dob = 'birthDate'), age.limits = 18,
-  wgt.data = wgts, wgt.columns = list(id = 'id', datetime = 'dt', wgt = 'val'),
-  earliest.date = epic_date, drugname = dn
-)
-
-write.csv(res, file = sprintf('Zoutput-%s-children18.csv', dn), row.names = FALSE)

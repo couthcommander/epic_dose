@@ -1,0 +1,14 @@
+Package: makepk
+Type: Package
+Title: Build daily dose
+Version: 1.0
+Date: 2023-10-18
+Maintainer: Cole Beck <cole.beck@vumc.org>
+Authors@R:
+    c(person("Cole", "Beck", role = c("aut", "cre"),
+             email = "cole.beck@vumc.org",
+             comment = c(ORCID = "0000-0002-6849-6255")))
+Description: Build daily dose
+License: GPL (>=3)
+RoxygenNote: 7.2.3
+Imports: EHR, pkdata, stringdist
