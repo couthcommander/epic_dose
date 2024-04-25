@@ -294,7 +294,7 @@ makepk <- function(drug, drug.columns = NULL,
     # merge with drug by closest time
     drug2 <- takeClosest(drug2, wgt.data, drug.col$wgtlinkid, wgt.col$id, 'dt', 'wgtdt', wgt.col$wgt)
     drug2[,'wgt'] <- nwn(drug2[,wgt.col$wgt])
-    drug2[,'wgt.dd'] <- abs(round(as.numeric(difftime(drug2[,'dt'], drug2[,'wgtdt'], units = 'days'))))
+    drug2[,'wgt.dd'] <- round(as.numeric(difftime(drug2[,'dt'], drug2[,'wgtdt'], units = 'days')))
     drug2[,'wgtdt'] <- NULL
   } else {
     drug2[,'wgt'] <- NA
