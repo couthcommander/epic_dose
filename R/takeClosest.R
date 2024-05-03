@@ -24,8 +24,10 @@ takeClosest <- function(dat1, dat2, id1, id2, time1, time2, val2) {
     if(curid != lastid) {
       i_dat <- ldat[[curid]]
     }
-    mix <- which.min(abs(difftime(xdts[i], i_dat[[1]])))
-    dat1[i,c(nt,nv)] <- i_dat[mix,]
+    if(!is.null(i_dat)) {
+      mix <- which.min(abs(difftime(xdts[i], i_dat[[1]])))
+      dat1[i,c(nt,nv)] <- i_dat[mix,]
+    }
     lastid <- curid
   }
   dat1
