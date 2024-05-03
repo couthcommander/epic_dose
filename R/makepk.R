@@ -202,7 +202,9 @@ makepk <- function(drug, drug.columns = NULL,
   drug1[,'unit'] <- unit_val
   # need UNIT|DOSE|STRENGTH
   # possibly impute from same-day outpatient?
-  drug2 <- drug1[!is.na(unit_val) & !is.na(dose_num) & !is.na(drug1[,drug.col$strength]),]
+  # strength can be imputed from dose - which yields one tablet (ntabs=1)
+  drug2 <- drug1[!is.na(unit_val) & !is.na(dose_num),]
+  # drug2 <- drug1[!is.na(unit_val) & !is.na(dose_num) & !is.na(drug1[,drug.col$strength]),]
   
   # standardize frequency
   freq <- sub('[ ]?_.*', '', tolower(drug2[,drug.col$frequency]))
@@ -277,7 +279,9 @@ makepk <- function(drug, drug.columns = NULL,
     drug2[cds_ix,'str_alt'] <- alt_str1[cds_ix]
     drug2[cds_ix,'str_num'] <- alt_str1[cds_ix]
   }
-  
+  dosestr_ix <- !is.na(drug2[,'dose_num']) & is.na(drug2[,'str_num'])
+  drug2[dosestr_ix,'str_num'] <- drug2[dosestr_ix,'dose_num']
+
   # check "weight" data columns
   if(!is.null(wgt.data)) {
     # this will overwrite an "wgt" column
