@@ -281,6 +281,8 @@ makepk <- function(drug, drug.columns = NULL,
   }
   dosestr_ix <- !is.na(drug2[,'dose_num']) & is.na(drug2[,'str_num'])
   drug2[dosestr_ix,'str_num'] <- drug2[dosestr_ix,'dose_num']
+  # require strength now
+  drug2 <- drug2[!is.na(drug2[,'str_num']),]
 
   # check "weight" data columns
   if(!is.null(wgt.data)) {
