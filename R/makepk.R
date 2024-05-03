@@ -220,7 +220,7 @@ makepk <- function(drug, drug.columns = NULL,
   if(length(ml_x)) {
     ml_den <- sub('.*/([0-9]+) ml', '\\1', str_u[ml_x])
     mg_num <- sub('[ ]*mg.*', '', gsub(',', '', str_u[ml_x]))
-    ml2mg <- function(x, y) as.numeric(x) / as.numeric(y)
+    ml2mg <- function(x, y) nwn(x) / nwn(y)
     mg_val <- mapply(ml2mg, strsplit(mg_num, '-'), ml_den)
     mg_str <- paste(vapply(mg_val, paste, character(1), collapse = '-'), 'mg')
     new_str <- mg_str[match(str_low, str_u[ml_x])]
@@ -248,7 +248,7 @@ makepk <- function(drug, drug.columns = NULL,
       cd_i <- l_cdn[[i]]
       cd_s <- nwn(combo_str[[i]])
       a <- sub('.*(^|[^a-zA-Z])([a-zA-Z]+) ([0-9.]+) MG.*', '\\2', cd_i)
-      b <- as.numeric(sub('.*(^|[^a-zA-Z])([a-zA-Z]+) ([0-9.]+) MG.*', '\\3', cd_i))
+      b <- nwn(sub('.*(^|[^a-zA-Z])([a-zA-Z]+) ([0-9.]+) MG.*', '\\3', cd_i))
       i_ix <- which.min(stringdist::stringdist(tolower(a), ldn))
       df_i <- data.frame(drugname = a, cstr = b)
       df_i[match(cd_s, b),'xstr'] <- cd_s
@@ -261,12 +261,12 @@ makepk <- function(drug, drug.columns = NULL,
   # standardize STRENGTH
   str_in_dn <- grep('[0-9]+[ ]*mg', drug2[,drug.col$drugname], ignore.case = TRUE)
   # this grabs first; need to associate strength with drugname when combo is given
-  alt_str <- as.numeric(sub('.*[^0-9]([0-9]+)$', '\\1', sub('[ ]?mg.*', '', drug2[str_in_dn,drug.col$drugname], ignore.case = TRUE)))
+  alt_str <- nwn(sub('.*[^0-9]([0-9]+)$', '\\1', sub('[ ]?mg.*', '', drug2[str_in_dn,drug.col$drugname], ignore.case = TRUE)))
   drug2[str_in_dn,'str_alt'] <- alt_str
   low_str <- tolower(drug2[,drug.col$strength])
   ustr <- unique(low_str)
   ## alter stdzStrength to remove commas(,)
-  stdstr <- as.numeric(EHR::stdzStrength(gsub(',', '', ustr)))
+  stdstr <- nwn(EHR::stdzStrength(gsub(',', '', ustr)))
   drug2[,'str_num'] <- stdstr[match(low_str, ustr)]
   alt_ix <- !is.na(drug2[,'str_alt']) & is.na(drug2[,'str_num'])
   drug2[alt_ix,'str_num'] <- drug2[alt_ix,'str_alt']
