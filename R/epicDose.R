@@ -18,7 +18,7 @@
 #' @return data set
 #' @export
 
-epic_dose <- function(drug, drug.columns = NULL,
+epicDose <- function(drug, drug.columns = NULL,
                    age.data = NULL, age.columns = NULL, age.limits = NULL,
                    wgt.data = NULL, wgt.columns = NULL, min.obs = 3, max.obs = 10,
                    earliest.date = NA, drugname = NULL, comments = TRUE

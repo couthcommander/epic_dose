@@ -80,7 +80,7 @@ wgts <- data.frame(
 
 ## create output
 ```
-library(epic_dose)
+library(epicDose)
 first_date <- as.POSIXct('2018-03-01')
 dn <- 'amoxicillin'
 drug0 <- drug[drug[,'X_DOC_TYPE'] %in% c('EPIC IP ADMIN','EPIC OP ORDER'),]
@@ -91,7 +91,7 @@ colMap <- list(
   frequency = 'X_FREQUENCY', dose = 'X_DOSE', doseunit = 'DOSE_UNIT_SOURCE_VALUE', quantity = 'QUANTITY',
   agelinkid = 'MRN', wgtlinkid = 'PERSON_ID'
 )
-res <- epic_dose(drug0, colMap,
+res <- epicDose(drug0, colMap,
   age.data = demo, age.columns = list(id = 'MRN', dob = 'birthDate'), age.limits = 18,
   wgt.data = wgts, wgt.columns = list(id = 'id', datetime = 'dt', wgt = 'val'),
   earliest.date = first_date, drugname = dn
