@@ -1,6 +1,6 @@
 #' Internal functions
 #' @keywords internal
-#' @name pk-internal
+#' @name ed-internal
 #' @aliases lu nwn vc
 NULL
 

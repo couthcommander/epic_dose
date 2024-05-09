@@ -18,7 +18,7 @@
 #' @return data set
 #' @export
 
-makepk <- function(drug, drug.columns = NULL,
+epic_dose <- function(drug, drug.columns = NULL,
                    age.data = NULL, age.columns = NULL, age.limits = NULL,
                    wgt.data = NULL, wgt.columns = NULL, min.obs = 3, max.obs = 10,
                    earliest.date = NA, drugname = NULL, comments = TRUE
@@ -368,37 +368,45 @@ makepk <- function(drug, drug.columns = NULL,
     cat(sprintf('conflicting doses: %.2f%% (%s / %s)\n', 100 * c1 / c2, c1, c2))
     cat('####################\n')
   }
-  
+
   dupkeys <- unique(key[duplicated(key)])
   # d1 has no duplicates
   d1 <- drug4[!key %in% dupkeys,]
   # d2 has discrepancy
   d2 <- drug4[key %in% dupkeys,]
-  d1[,'conflict'] <- 0
-  # conflict=2 is same start/end time
-  d1[!is.na(d1[,'enddt']) & d1[,'dt'] == d1[,'enddt'], 'conflict'] <- 2
-  # conflict=3 has end time prior to start
-  d1[!is.na(d1[,'enddt']) & d1[,'dt'] > d1[,'enddt'], 'conflict'] <- 3
-  # conflict=1 is actual discrepant values
-  d2[,'conflict'] <- 1
-  cond <- numeric(nrow(d2))
-  cond[d2[,'dt'] < d2[,'enddt']] <- 4
-  cond[d2[,'dt'] == d2[,'enddt']] <- 2
-  cond[d2[,'dt'] > d2[,'enddt']] <- 1
-  cond[is.na(d2[,'enddt'])] <- 3
-  d2[,'cond'] <- cond
-  
-  d2key <- do.call(paste, c(d2[,c('id','dt')], sep = '|'))
-  ld2 <- split(d2, d2key)
-  d3 <- do.call(rbind, lapply(ld2, function(i) {
-    # want one enddate on different date
-    k_i <- which(i$cond == max(i$cond))
-    if(length(k_i) == 1) {
-      i[,'conflict'] <- 0
-    }
-    i[k_i,]
-  }))
-  d3[,'cond'] <- NULL
+  if(nrow(d1) > 0) {
+    d1[,'conflict'] <- 0
+    # conflict=2 is same start/end time
+    d1[!is.na(d1[,'enddt']) & d1[,'dt'] == d1[,'enddt'], 'conflict'] <- 2
+    # conflict=3 has end time prior to start
+    d1[!is.na(d1[,'enddt']) & d1[,'dt'] > d1[,'enddt'], 'conflict'] <- 3
+  } else {
+    d1 <- NULL
+  }
+  if(nrow(d2) > 0) {
+    # conflict=1 is actual discrepant values
+    d2[,'conflict'] <- 1
+    cond <- numeric(nrow(d2))
+    cond[d2[,'dt'] < d2[,'enddt']] <- 4
+    cond[d2[,'dt'] == d2[,'enddt']] <- 2
+    cond[d2[,'dt'] > d2[,'enddt']] <- 1
+    cond[is.na(d2[,'enddt'])] <- 3
+    d2[,'cond'] <- cond
+
+    d2key <- do.call(paste, c(d2[,c('id','dt')], sep = '|'))
+    ld2 <- split(d2, d2key)
+    d3 <- do.call(rbind, lapply(ld2, function(i) {
+      # want one enddate on different date
+      k_i <- which(i$cond == max(i$cond))
+      if(length(k_i) == 1) {
+        i[,'conflict'] <- 0
+      }
+      i[k_i,]
+    }))
+    d3[,'cond'] <- NULL
+  } else {
+    d3 <- NULL
+  }
   d4 <- rbind(d1, d3)
   
   voi <- c('id','dt','enddt','daily.dose','calc_dur','conflict',drug.col$inout,'wgt.dd','wgt')

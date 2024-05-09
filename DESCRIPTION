@@ -1,4 +1,4 @@
-Package: makepk
+Package: epic_dose
 Type: Package
 Title: Build daily dose
 Version: 1.0
@@ -10,5 +10,5 @@ Authors@R:
              comment = c(ORCID = "0000-0002-6849-6255")))
 Description: Build daily dose
 License: GPL (>=3)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.1
 Imports: EHR, pkdata, stringdist
