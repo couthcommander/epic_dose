@@ -1,4 +1,4 @@
-Install the "epic_dose" package to use the "epic_dose" function.
+Install the "epicDose" package to use the "epicDose" function.
 
 ```
 remotes::install_github('couthcommander/epic_dose')
